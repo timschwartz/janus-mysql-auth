@@ -23,20 +23,11 @@ var create_access_query = "CREATE TABLE IF NOT EXISTS `access_statistics` (";
 function Plugin() {
     console.log("Loading janus-mysql-auth");
     log.info("Loading janus-mysql-auth");
-    this._conn = mysql.createConnection({
+    this._conn = mysql.createPool({
     host     : config.MySQL_Hostname,
     user     : config.MySQL_Username,
     password : config.MySQL_Password,
     database : config.MySQL_Database
-    });
-
-    this._conn.connect(function(err) {
-        if (err) {
-            throw new Error('Can not connect to mysql server '+config.MySQL_Hostname);
-            return;
-        }
-    console.log("Connected to mysql server "+config.MySQL_Hostname);
-    log.info("Connected to mysql server "+config.MySQL_Hostname);
     });
 
     this._conn.query(create_users_query, function(err, results) {
@@ -48,6 +39,9 @@ function Plugin() {
         if(err != null) throw new Error(err);
         if(results.warningCount == 0) log.info("Created `access_statistics` table.");
     });   
+
+    console.log("Connected to mysql server "+config.MySQL_Hostname);
+    log.info("Connected to mysql server "+config.MySQL_Hostname);
 }
 
 Plugin.prototype.call = function(name, session, command) {
