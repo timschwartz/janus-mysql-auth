@@ -1,6 +1,7 @@
 var mysql  = require('mysql');
 var args   = require('optimist').argv;
 var config = require(args.config || '../../config.js');
+var bcrypt = require('bcryptjs');
 
 var create_users_query = "CREATE TABLE IF NOT EXISTS `users` (";
     create_users_query+= "`id` int(11) NOT NULL AUTO_INCREMENT, PRIMARY KEY(`id`),";
@@ -12,7 +13,8 @@ var create_users_query = "CREATE TABLE IF NOT EXISTS `users` (";
     create_users_query+= "  `client_version` varchar(32) NOT NULL,";
     create_users_query+= "  `roomId` varchar(64) NOT NULL,";
     create_users_query+= "  `created_at` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',";
-    create_users_query+= "  `updated_at` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00'";
+    create_users_query+= "  `updated_at` timestamp NOT NULL DEFAULT '0000-00-00 00:00:00',";
+    create_users_query+= "  `remember_token` varchar(255)";
     create_users_query+= ")";
 
 var create_access_query = "CREATE TABLE IF NOT EXISTS `access_statistics` (";
@@ -87,8 +89,8 @@ Plugin.prototype.call = function(name, session, command) {
 
 Plugin.prototype.search = function(command, session) {
     var search_query = "SELECT `userId` FROM `users` WHERE `userId` = ? AND `password` != '';";
-    var inserts = [command.userId];
-    var sql = mysql.format(search_query, inserts);
+    var search = [command.userId];
+    var sql = mysql.format(search_query, search);
 
     this._conn.query(sql, function(err, results) {
         if(err != null) throw new Error(err);
@@ -116,22 +118,40 @@ Plugin.prototype.search = function(command, session) {
 }
 
 Plugin.prototype.authenticate = function(command, session) {
-    var auth_query = "SELECT * FROM `users` WHERE `userId` = ? AND `password` = PASSWORD(?);";
-    var inserts = [command.userId, command.password];
-    var sql = mysql.format(auth_query, inserts);
+    var search_query = "SELECT `password` FROM `users` WHERE `userId` = ?";
+    var search = [command.userId];
+    var sql = mysql.format(search_query, search);
+    
+    var self = this;
 
     this._conn.query(sql, function(err, results) {
                         if(err != null) throw new Error(err);
                         if(results.length == 0) {
-                            session.clientError('Incorrect username or password');
+                            session.clientError('Incorrect username or password.');
                             session._socket.destroy();
                             return;
                         }
-                    });
+                        var salt = bcrypt.getSalt(results[0].password);
+                        var bc = bcrypt.hashSync(command.password, salt);
 
-    var search_query = "SELECT `userId`, `blocked` FROM `users` WHERE `userId` = ? AND `blocked` != '0000-00-00 00:00:00';";
-    var inserts = [command.userId];
-    var sql = mysql.format(search_query, inserts);
+
+                        var auth_query = "SELECT * FROM `users` WHERE `userId` = ? AND `password` = ?;";
+                        var auth = [command.userId, bc];
+                        var auth_sql = mysql.format(auth_query, auth);
+
+                        self._conn.query(auth_sql, function(err, results) {
+                            if(err != null) throw new Error(err);
+                            if(results.length == 0) {
+                                session.clientError('Incorrect username or password.');
+                                session._socket.destroy();
+                                return;
+                            }
+                        });
+    });
+
+    var blocked_query = "SELECT `userId`, `blocked` FROM `users` WHERE `userId` = ? AND `blocked` != '0000-00-00 00:00:00';";
+    var blocked = [command.userId];
+    var sql = mysql.format(blocked_query, blocked);
 
     this._conn.query(sql, function(err, results) {
         if(err != null) throw new Error(err);
