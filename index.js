@@ -23,27 +23,29 @@ var create_access_query = "CREATE TABLE IF NOT EXISTS `access_statistics` (";
     create_access_query+= ");";
 
 function Plugin() {
-    console.log("Loading janus-mysql-auth");
-    log.info("Loading janus-mysql-auth");
-    this._conn = mysql.createPool({
-    host     : config.MySQL_Hostname,
-    user     : config.MySQL_Username,
-    password : config.MySQL_Password,
-    database : config.MySQL_Database
-    });
+    if(config.authMode != 'none') {
+        console.log("Loading janus-mysql-auth");
+        log.info("Loading janus-mysql-auth");
+        this._conn = mysql.createPool({
+            host     : config.MySQL_Hostname,
+            user     : config.MySQL_Username,
+            password : config.MySQL_Password,
+            database : config.MySQL_Database
+        });
 
-    this._conn.query(create_users_query, function(err, results) {
-        if(err != null) throw new Error(err);
-        if(results.warningCount == 0) log.info("Created `users` table.");
-    });
+        this._conn.query(create_users_query, function(err, results) {
+            if(err != null) throw new Error(err);
+            if(results.warningCount == 0) log.info("Created `users` table.");
+        });
 
-    this._conn.query(create_access_query, function(err, results) {
-        if(err != null) throw new Error(err);
-        if(results.warningCount == 0) log.info("Created `access_statistics` table.");
-    });   
+        this._conn.query(create_access_query, function(err, results) {
+            if(err != null) throw new Error(err);
+            if(results.warningCount == 0) log.info("Created `access_statistics` table.");
+        });   
 
-    console.log("Connected to mysql server "+config.MySQL_Hostname);
-    log.info("Connected to mysql server "+config.MySQL_Hostname);
+        console.log("Connected to mysql server "+config.MySQL_Hostname);
+        log.info("Connected to mysql server "+config.MySQL_Hostname);
+    }
 }
 
 Plugin.prototype.call = function(name, session, command) {
@@ -67,24 +69,26 @@ Plugin.prototype.call = function(name, session, command) {
             break;
     }
 
-    /* User successfully authenticated */
-    var access_query = "INSERT INTO `access_statistics` (`logon_time`, `ip`) VALUES (NOW(), ?);";
-    var inserts = [session._socket.remoteAddress];
-    var sql = mysql.format(access_query, inserts);
+    if(config.authMode != 'none') {
+        /* User successfully authenticated */
+        var access_query = "INSERT INTO `access_statistics` (`logon_time`, `ip`) VALUES (NOW(), ?);";
+        var inserts = [session._socket.remoteAddress];
+        var sql = mysql.format(access_query, inserts);
 
-    this._conn.query(sql, function(err, results) {
-        if(err != null) console.log(err);
-    });
+        this._conn.query(sql, function(err, results) {
+            if(err != null) console.log(err);
+        });
 
-    var update_query = "INSERT INTO `users` (`userId`, `ip`, `created_at`, `client_version`, `roomId`, `password`) VALUES (?, ?, NOW(), ?, ?, ?)";
-        update_query+= " ON DUPLICATE KEY UPDATE `ip` = ?, `client_version` = ?, `roomId` = ?, `updated_at` = NOW();";
-    var inserts = [ command.userId, session._socket.remoteAddress, command.version, command.roomId, '', 
-                    session._socket.remoteAddress, command.version, command.roomId ];
-    var sql = mysql.format(update_query, inserts);
+        var update_query = "INSERT INTO `users` (`userId`, `ip`, `created_at`, `client_version`, `roomId`, `password`) VALUES (?, ?, NOW(), ?, ?, ?)";
+            update_query += " ON DUPLICATE KEY UPDATE `ip` = ?, `client_version` = ?, `roomId` = ?, `updated_at` = NOW();";
+        var inserts = [ command.userId, session._socket.remoteAddress, command.version, command.roomId, '', 
+        session._socket.remoteAddress, command.version, command.roomId ];
+        var sql = mysql.format(update_query, inserts);
 
-    this._conn.query(sql, function(err, results) {
-        if(err != null) throw new Error(err);
-    });
+        this._conn.query(sql, function(err, results) {
+            if(err != null) throw new Error(err);
+        });
+    }
 }
 
 Plugin.prototype.search = function(command, session) {
